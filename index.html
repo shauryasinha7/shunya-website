@@ -46,6 +46,10 @@
             color: #FFFAF0;
         }
 
+        .text-overlay * {
+            pointer-events: auto;
+        }
+
         .header-info {
             position: absolute;
             top: 40px;
@@ -137,21 +141,23 @@
             background: rgba(6, 3, 141, 0.95);
             z-index: 1000;
             display: none;
-            align-items: center;
-            justify-content: center;
             backdrop-filter: blur(10px);
         }
 
         .info-modal.active {
-            display: flex;
+            display: block;
         }
 
         .info-content {
             max-width: 600px;
-            padding: 60px;
+            padding: 0;
             text-align: left;
             color: #FFFAF0;
             font-family: 'Inter', sans-serif;
+            position: absolute;
+            left: 40px;
+            top: 50%;
+            transform: translateY(-50%);
         }
 
         .info-content p {
@@ -182,8 +188,9 @@
 
         @media (max-width: 768px) {
             .info-content {
-                padding: 40px 20px;
+                padding: 0;
                 max-width: 90%;
+                left: 20px;
             }
 
             .info-content p {
@@ -256,8 +263,9 @@
     <!-- Info Modal -->
     <div class="info-modal" id="infoModal">
         <div class="info-content">
-            <p>Shunya partners with businesses that can be transformed by the strategic application of technology to
-                foster enduring growth over a long time horizon.</p>
+            <p>India doesn't lack technical genius, it lacks the cultural oxygen that lets genius act. Shunya hand picks
+                gifted Indian youth and immerses them in Silicon Valley for three months. We believe agency can be
+                taught, and greatness can come from anywhere.</p>
         </div>
         <div class="close-modal" onclick="closeInfoModal()">CLOSE</div>
     </div>
@@ -466,12 +474,31 @@
         // Initialize when page loads
         window.addEventListener('load', init);
 
+        // Add click listener for INFO button
+        document.addEventListener('DOMContentLoaded', function () {
+            const infoButton = document.querySelector('.info-link');
+            console.log('Info button found:', infoButton);
+
+            if (infoButton) {
+                infoButton.addEventListener('click', function (e) {
+                    console.log('Info button clicked!');
+                    e.preventDefault();
+                    openInfoModal();
+                });
+            }
+        });
+
         // Modal functions
         function openInfoModal() {
-            document.getElementById('infoModal').classList.add('active');
+            console.log('Opening modal...');
+            const modal = document.getElementById('infoModal');
+            console.log('Modal element:', modal);
+            modal.classList.add('active');
+            console.log('Modal classes:', modal.classList);
         }
 
         function closeInfoModal() {
+            console.log('Closing modal...');
             document.getElementById('infoModal').classList.remove('active');
         }
 
@@ -480,10 +507,12 @@
             const modal = document.getElementById('infoModal');
             const content = modal.querySelector('.info-content');
             const closeBtn = modal.querySelector('.close-modal');
+            const infoBtn = document.querySelector('.info-link');
 
             if (modal.classList.contains('active') &&
                 !content.contains(event.target) &&
-                !closeBtn.contains(event.target)) {
+                !closeBtn.contains(event.target) &&
+                !infoBtn.contains(event.target)) {
                 closeInfoModal();
             }
         });
