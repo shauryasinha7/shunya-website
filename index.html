@@ -120,10 +120,80 @@
             text-decoration: none;
             opacity: 0.9;
             transition: opacity 0.2s ease;
+            cursor: pointer;
+            pointer-events: auto;
         }
 
         .info-link:hover {
             opacity: 1;
+        }
+
+        .info-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(6, 3, 141, 0.95);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .info-modal.active {
+            display: flex;
+        }
+
+        .info-content {
+            max-width: 600px;
+            padding: 60px;
+            text-align: left;
+            color: #FFFAF0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .info-content p {
+            font-size: 18px;
+            line-height: 1.6;
+            margin: 0;
+            font-weight: 300;
+            letter-spacing: 0.5px;
+        }
+
+        .close-modal {
+            position: absolute;
+            bottom: 40px;
+            left: 40px;
+            color: #FFFAF0;
+            text-decoration: none;
+            opacity: 0.9;
+            transition: opacity 0.2s ease;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 400;
+            letter-spacing: 0.5px;
+        }
+
+        .close-modal:hover {
+            opacity: 1;
+        }
+
+        @media (max-width: 768px) {
+            .info-content {
+                padding: 40px 20px;
+                max-width: 90%;
+            }
+
+            .info-content p {
+                font-size: 16px;
+            }
+
+            .close-modal {
+                bottom: 20px;
+                left: 20px;
+            }
         }
 
         .email {
@@ -177,10 +247,19 @@
         </div>
 
         <div class="footer-info">
-            <div class="info-link">INFO</div>
+            <div class="info-link" onclick="openInfoModal()">INFO</div>
             <div class="location">BANGALORE</div>
             <div class="email">INFO@SHUNYA.COM</div>
         </div>
+    </div>
+
+    <!-- Info Modal -->
+    <div class="info-modal" id="infoModal">
+        <div class="info-content">
+            <p>Shunya partners with businesses that can be transformed by the strategic application of technology to
+                foster enduring growth over a long time horizon.</p>
+        </div>
+        <div class="close-modal" onclick="closeInfoModal()">CLOSE</div>
     </div>
 
     <script>
@@ -386,6 +465,35 @@
 
         // Initialize when page loads
         window.addEventListener('load', init);
+
+        // Modal functions
+        function openInfoModal() {
+            document.getElementById('infoModal').classList.add('active');
+        }
+
+        function closeInfoModal() {
+            document.getElementById('infoModal').classList.remove('active');
+        }
+
+        // Close modal when clicking outside content
+        document.addEventListener('click', function (event) {
+            const modal = document.getElementById('infoModal');
+            const content = modal.querySelector('.info-content');
+            const closeBtn = modal.querySelector('.close-modal');
+
+            if (modal.classList.contains('active') &&
+                !content.contains(event.target) &&
+                !closeBtn.contains(event.target)) {
+                closeInfoModal();
+            }
+        });
+
+        // Close modal with Escape key
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+                closeInfoModal();
+            }
+        });
     </script>
 </body>
 
