@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>3D Möbius Strip</title>
+    <title>SHUNYA</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Arimo:wght@400;500;600;700&display=swap');
 
@@ -161,7 +161,7 @@
         }
 
         .info-content p {
-            font-size: 16px;
+            font-size: 17px;
             line-height: 1.6;
             margin: 0;
             font-weight: 300;
@@ -194,7 +194,7 @@
             }
 
             .info-content p {
-                font-size: 14px;
+                font-size: 16px;
             }
 
             .close-modal {
@@ -274,9 +274,20 @@
         // 3D Möbius Strip with OBJ loading
         let scene, camera, renderer, mobiusStrip;
         let mouseX = 0, mouseY = 0;
-        let targetX = 0, targetY = 0;
-        let velocityX = 0, velocityY = 0;
-        let lastMouseX = 0, lastMouseY = 0;
+
+        // City points and interaction
+        let cityPoints = [];
+        let sanFranciscoPoint, bangalorePoint;
+        let raycaster, mouse3D;
+        let connectionLines = [];
+        let cityLabels = [];
+        // 3D ray-to-point proximity threshold (world units along camera ray)
+        let proximityThreshold = 12.0;
+        let asciiLines = [];
+        let asciiStartMarkers = [];
+        let asciiEndMarkers = [];
+        let animationFrame = 0;
+        let isModalOpen = false;
 
         function init() {
             // Create scene
@@ -308,6 +319,10 @@
             fillLight.position.set(-3, -1, -2);
             scene.add(fillLight);
 
+            // Initialize raycaster and mouse vector
+            raycaster = new THREE.Raycaster();
+            mouse3D = new THREE.Vector2();
+
             // Load OBJ file
             const loader = new THREE.OBJLoader();
             loader.load(
@@ -332,9 +347,9 @@
                         }
                     });
 
-                    // Scale and position the object (20% bigger again)
-                    object.scale.set(0.018, 0.018, 0.018);
-                    object.position.set(0, 0, 0);
+                    // Scale and position the object (30% bigger + lowered by 40% more)
+                    object.scale.set(0.094, 0.094, 0.094);
+                    object.position.set(0, -4.5, 0);
 
                     // Fix initial orientation
                     object.rotation.x = Math.PI * 0.2;
@@ -343,6 +358,9 @@
 
                     scene.add(object);
                     mobiusStrip = object;
+
+                    // Create city points on the Möbius strip
+                    createCityPoints();
                 },
                 function (progress) {
                     console.log('Loading progress: ', (progress.loaded / progress.total * 100) + '%');
@@ -373,8 +391,8 @@
             });
 
             mobiusStrip = new THREE.Mesh(geometry, material);
-            mobiusStrip.scale.set(0.054, 0.054, 0.054);
-            mobiusStrip.position.set(0, 0, 0);
+            mobiusStrip.scale.set(0.281, 0.281, 0.281);
+            mobiusStrip.position.set(0, -4.5, 0);
 
             // Fix initial orientation for fallback too
             mobiusStrip.rotation.x = Math.PI * 0.2;
@@ -384,29 +402,333 @@
             mobiusStrip.castShadow = true;
             mobiusStrip.receiveShadow = true;
             scene.add(mobiusStrip);
+
+            // Create city points on the fallback torus too
+            createCityPoints();
+        }
+
+        function createCityPoints() {
+            // Create San Francisco point (positioned on one side of the Möbius strip)
+            const sanFranciscoGeometry = new THREE.SphereGeometry(0.08, 16, 16);
+            const sanFranciscoMaterial = new THREE.MeshStandardMaterial({
+                color: 0xD4D2C5, // More visible contrast
+                metalness: 0.3,
+                roughness: 0.2
+            });
+            sanFranciscoPoint = new THREE.Mesh(sanFranciscoGeometry, sanFranciscoMaterial);
+
+            // Temporary default; will be overridden by farthest-pair calculation
+            sanFranciscoPoint.position.set(1.5, 0.8, 0.3);
+            // Attach real-world coordinates
+            sanFranciscoPoint.userData = { city: 'SAN FRANCISCO', lat: 37.7749, lng: -122.4194 };
+
+            // Add to the Möbius strip so it moves with it
+            if (mobiusStrip) {
+                mobiusStrip.add(sanFranciscoPoint);
+            } else {
+                scene.add(sanFranciscoPoint);
+            }
+            cityPoints.push(sanFranciscoPoint);
+
+            // Create Bangalore point (positioned on opposite side)
+            const bangaloreGeometry = new THREE.SphereGeometry(0.08, 16, 16);
+            const bangaloreMaterial = new THREE.MeshStandardMaterial({
+                color: 0xD4D2C5, // More visible contrast
+                metalness: 0.3,
+                roughness: 0.2
+            });
+            bangalorePoint = new THREE.Mesh(bangaloreGeometry, bangaloreMaterial);
+
+            // Temporary default; will be overridden by farthest-pair calculation
+            bangalorePoint.position.set(-0.4, -1.3, -0.5);
+            // Attach real-world coordinates
+            bangalorePoint.userData = { city: 'BANGALORE', lat: 12.9716, lng: 77.5946 };
+
+            // Add to the Möbius strip so it moves with it
+            if (mobiusStrip) {
+                mobiusStrip.add(bangalorePoint);
+            } else {
+                scene.add(bangalorePoint);
+            }
+            cityPoints.push(bangalorePoint);
+
+            // After both points exist, reposition them at the two farthest vertices on the strip
+            setCityPointsToFarthestPair();
+        }
+
+        // Gather all local-space vertex positions from the mobius mesh (including children)
+        function collectLocalVerticesFromMesh(rootMesh) {
+            const vertices = [];
+            if (!rootMesh) return vertices;
+            rootMesh.traverse(child => {
+                if (child.isMesh && child.geometry && child.geometry.attributes && child.geometry.attributes.position) {
+                    const pos = child.geometry.attributes.position;
+                    for (let i = 0; i < pos.count; i++) {
+                        const v = new THREE.Vector3();
+                        v.fromBufferAttribute(pos, i); // local space
+                        vertices.push(v);
+                    }
+                }
+            });
+            return vertices;
+        }
+
+        // Heuristic to find an approximate diameter: farthest-of-farthest
+        function findFarthestPair(vertices) {
+            if (vertices.length < 2) return null;
+            const dist2 = (a, b) => a.distanceToSquared(b);
+            let idxA = 0;
+            // Find farthest from an arbitrary start
+            let maxD = -1, idxB = 0;
+            for (let i = 1; i < vertices.length; i++) {
+                const d = dist2(vertices[i], vertices[idxA]);
+                if (d > maxD) { maxD = d; idxB = i; }
+            }
+            // From that farthest, find the farthest again
+            maxD = -1;
+            let idxC = idxB;
+            for (let i = 0; i < vertices.length; i++) {
+                const d = dist2(vertices[i], vertices[idxB]);
+                if (d > maxD) { maxD = d; idxC = i; }
+            }
+            return [vertices[idxB].clone(), vertices[idxC].clone()];
+        }
+
+        function setCityPointsToFarthestPair() {
+            if (!mobiusStrip || !sanFranciscoPoint || !bangalorePoint) return;
+            const verts = collectLocalVerticesFromMesh(mobiusStrip);
+            const pair = findFarthestPair(verts);
+            if (!pair) return;
+            const [va, vb] = pair;
+            // Swap: assign SAN FRANCISCO to vb and BANGALORE to va
+            sanFranciscoPoint.position.copy(vb);
+            bangalorePoint.position.copy(va);
+        }
+
+        function checkCityProximity() {
+            if (isModalOpen) return;
+            // Update mouse position for raycasting
+            mouse3D.x = mouseX;
+            mouse3D.y = mouseY;
+
+            // Cast ray from camera through mouse position
+            raycaster.setFromCamera(mouse3D, camera);
+
+            // Find the closest city point within threshold (3D ray-to-point distance)
+            let closestPoint = null;
+            let closestDistance = Infinity;
+            let closestIndex = -1;
+
+            cityPoints.forEach((point, index) => {
+                const worldPosition = new THREE.Vector3();
+                point.getWorldPosition(worldPosition);
+                const distance = raycaster.ray.distanceToPoint(worldPosition);
+                if (distance < proximityThreshold && distance < closestDistance) {
+                    closestPoint = point;
+                    closestDistance = distance;
+                    closestIndex = index;
+                }
+            });
+
+            // Hide all connections and labels first
+            cityPoints.forEach((point, index) => {
+                removeConnectionLine(index);
+                hideCityLabel(index);
+            });
+
+            // Show connection and label only for the closest point
+            if (closestPoint !== null) {
+                createConnectionLine(closestPoint);
+                showCityLabel(closestPoint);
+            }
+        }
+
+        function createConnectionLine(cityPoint) {
+            const cityIndex = cityPoints.indexOf(cityPoint);
+
+            // Get the world position of the city point
+            const cityWorldPosition = new THREE.Vector3();
+            cityPoint.getWorldPosition(cityWorldPosition);
+
+            // Convert city point to screen coordinates
+            const cityScreenPosition = new THREE.Vector3();
+            cityScreenPosition.copy(cityWorldPosition);
+            cityScreenPosition.project(camera);
+
+            // Convert to screen pixels (matching Three.js coordinate system)
+            const cityX = (cityScreenPosition.x * 0.5 + 0.5) * window.innerWidth;
+            const cityY = (-cityScreenPosition.y * 0.5 + 0.5) * window.innerHeight;
+
+            // Get current mouse position in screen pixels (matching the same conversion)
+            const mousePixelX = (mouseX * 0.5 + 0.5) * window.innerWidth;
+            const mousePixelY = (-mouseY * 0.5 + 0.5) * window.innerHeight;
+
+            // Ensure the city point is visible (not behind camera)
+            if (cityScreenPosition.z > 1) return; // Skip if behind camera
+
+            // Create or update ASCII line element
+            if (!asciiLines[cityIndex]) {
+                const asciiLine = document.createElement('div');
+                asciiLine.style.cssText = `
+                    position: fixed;
+                    pointer-events: none;
+                    z-index: 1000;
+                    color: #FFFAF0;
+                    font-family: 'Courier New', monospace;
+                    font-size: 14px;
+                    font-weight: bold;
+                    opacity: 0.9;
+                    white-space: nowrap;
+                    line-height: 1;
+                    transform-origin: 0 50%;
+                    top: 0;
+                    left: 0;
+                    display: block;
+                    overflow: hidden;
+                `;
+                document.body.appendChild(asciiLine);
+                asciiLines[cityIndex] = asciiLine;
+            }
+
+            const asciiLine = asciiLines[cityIndex];
+
+            // Create or update start marker
+            if (!asciiStartMarkers[cityIndex]) {
+                const start = document.createElement('div');
+                start.textContent = '◉';
+                start.style.cssText = `
+                    position: fixed;
+                    pointer-events: none;
+                    z-index: 1000;
+                    color: #FFFAF0;
+                    font-family: 'Courier New', monospace;
+                    font-size: 14px;
+                    line-height: 1;
+                    transform: translate(-50%, -50%);
+                `;
+                document.body.appendChild(start);
+                asciiStartMarkers[cityIndex] = start;
+            }
+
+            // Create or update end marker
+            if (!asciiEndMarkers[cityIndex]) {
+                const end = document.createElement('div');
+                end.textContent = '→';
+                end.style.cssText = `
+                    position: fixed;
+                    pointer-events: none;
+                    z-index: 1000;
+                    color: #FFFAF0;
+                    font-family: 'Courier New', monospace;
+                    font-size: 14px;
+                    line-height: 1;
+                    transform: translate(-50%, -50%);
+                `;
+                document.body.appendChild(end);
+                asciiEndMarkers[cityIndex] = end;
+            }
+
+            // Calculate line direction and length (FROM city TO cursor)
+            const dx = mousePixelX - cityX;
+            const dy = mousePixelY - cityY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(dy, dx);
+
+            // Create animated ASCII middle section only; markers handle endpoints
+            const asciiChars = ['#', '.', '/', '%', '·', '‧', '•', '∘', '○'];
+            const charSpacing = 12; // Pixels per character
+            const innerLength = Math.max(1, Math.floor((distance - 20) / charSpacing));
+            let asciiContent = '';
+            for (let i = 0; i < innerLength; i++) {
+                const charIndex = (i + Math.floor(animationFrame / 3)) % asciiChars.length;
+                asciiContent += asciiChars[charIndex] + (i < innerLength - 1 ? ' ' : '');
+            }
+
+            // Apply content and clip to exact distance
+            asciiLine.textContent = asciiContent;
+            asciiLine.style.width = `${Math.max(0, distance)}px`;
+
+            // Position and rotate the line so left edge is exactly at city point
+            asciiLine.style.transform = `translate(${cityX}px, ${cityY}px) rotate(${angle}rad)`;
+
+            // Position markers at exact endpoints
+            const start = asciiStartMarkers[cityIndex];
+            const end = asciiEndMarkers[cityIndex];
+            start.style.left = `${cityX}px`;
+            start.style.top = `${cityY}px`;
+            end.style.left = `${mousePixelX}px`;
+            end.style.top = `${mousePixelY}px`;
+        }
+
+        function removeConnectionLine(cityIndex) {
+            if (connectionLines[cityIndex]) {
+                scene.remove(connectionLines[cityIndex]);
+                connectionLines[cityIndex] = null;
+            }
+            if (asciiLines[cityIndex]) {
+                document.body.removeChild(asciiLines[cityIndex]);
+                asciiLines[cityIndex] = null;
+            }
+            if (asciiStartMarkers[cityIndex]) {
+                document.body.removeChild(asciiStartMarkers[cityIndex]);
+                asciiStartMarkers[cityIndex] = null;
+            }
+            if (asciiEndMarkers[cityIndex]) {
+                document.body.removeChild(asciiEndMarkers[cityIndex]);
+                asciiEndMarkers[cityIndex] = null;
+            }
+        }
+
+        function showCityLabel(cityPoint) {
+            if (isModalOpen) return;
+            const cityIndex = cityPoints.indexOf(cityPoint);
+            const { city } = cityPoint.userData || {};
+
+            // Create label if needed
+            if (!cityLabels[cityIndex]) {
+                const label = document.createElement('div');
+                label.style.cssText = `
+                    position: fixed;
+                    color: #FFFAF0;
+                    font-family: 'Inter', sans-serif;
+                    font-size: 12px;
+                    font-weight: 400;
+                    letter-spacing: 0.5px;
+                    pointer-events: none;
+                    z-index: 100;
+                    opacity: 0;
+                    transition: opacity 0.15s ease;
+                    white-space: nowrap;
+                `;
+                document.body.appendChild(label);
+                cityLabels[cityIndex] = label;
+            }
+
+            // Compute cursor screen position
+            const mousePixelX = (mouseX * 0.5 + 0.5) * window.innerWidth;
+            const mousePixelY = (-mouseY * 0.5 + 0.5) * window.innerHeight;
+
+            // Update text and position slightly offset from the cursor
+            const label = cityLabels[cityIndex];
+            label.textContent = city || '';
+            label.style.left = mousePixelX + 20 + 'px';
+            label.style.top = mousePixelY + 10 + 'px';
+            label.style.opacity = '1';
+        }
+
+        function hideCityLabel(cityIndex) {
+            if (cityLabels[cityIndex]) {
+                cityLabels[cityIndex].style.opacity = '0';
+            }
         }
 
         function onMouseMove(event) {
-            // Convert mouse position to 3D world coordinates
-            const newMouseX = (event.clientX / window.innerWidth) * 2 - 1;
-            const newMouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+            // Convert mouse position to normalized coordinates for raycasting
+            mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+            mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
 
-            // Calculate mouse movement velocity
-            const deltaX = newMouseX - lastMouseX;
-            const deltaY = newMouseY - lastMouseY;
-
-            // Add to velocity with momentum (reduced for slower movement)
-            velocityX += deltaX * 0.15;
-            velocityY += deltaY * 0.15;
-
-            // Scale the movement to reasonable bounds
-            const moveRange = 5;
-            targetX = newMouseX * moveRange;
-            targetY = newMouseY * moveRange;
-
-            // Update last mouse position
-            lastMouseX = newMouseX;
-            lastMouseY = newMouseY;
+            // Check proximity to city points
+            checkCityProximity();
         }
 
         function onWindowResize() {
@@ -418,61 +740,77 @@
         function animate() {
             requestAnimationFrame(animate);
 
+            // Increment animation frame for ASCII line animation
+            animationFrame = (animationFrame + 1) % 60;
+
+            // Update any existing ASCII lines for animation
+            updateActiveAsciiLines();
+
             if (mobiusStrip) {
-                // Pure automatic 360-degree Y-axis rotation (keep as is)
-                mobiusStrip.rotation.y += 0.01;
+                // Only rotate the strip - NO position changes from cursor
+                mobiusStrip.rotation.y += 0.006;
 
-                // PURE momentum-based movement - NO attraction to prevent oscillation
-                mobiusStrip.position.x += velocityX;
-                mobiusStrip.position.y += velocityY;
-
-                // Only gentle friction - no forces pulling toward cursor
-                const friction = 0.988;
-                velocityX *= friction;
-                velocityY *= friction;
-
-                // Calculate actual screen boundaries based on camera view
-                const aspect = camera.aspect;
-                const fov = camera.fov * Math.PI / 180; // Convert to radians
-                const distance = camera.position.z; // Camera distance from origin
-
-                // Calculate the actual visible area at the strip's Z position (z=0)
-                const height = 2 * Math.tan(fov / 2) * distance;
-                const width = height * aspect;
-
-                const screenBounds = {
-                    left: -width / 2,
-                    right: width / 2,
-                    top: height / 2,
-                    bottom: -height / 2
-                };
-
-                // Check horizontal bounds and bounce
-                if (mobiusStrip.position.x > screenBounds.right) {
-                    mobiusStrip.position.x = screenBounds.right;
-                    velocityX = -Math.abs(velocityX) * 0.8; // Bounce left with some energy loss
-                }
-                if (mobiusStrip.position.x < screenBounds.left) {
-                    mobiusStrip.position.x = screenBounds.left;
-                    velocityX = Math.abs(velocityX) * 0.8; // Bounce right with some energy loss
-                }
-
-                // Check vertical bounds and bounce
-                if (mobiusStrip.position.y > screenBounds.top) {
-                    mobiusStrip.position.y = screenBounds.top;
-                    velocityY = -Math.abs(velocityY) * 0.8; // Bounce down with some energy loss
-                }
-                if (mobiusStrip.position.y < screenBounds.bottom) {
-                    mobiusStrip.position.y = screenBounds.bottom;
-                    velocityY = Math.abs(velocityY) * 0.8; // Bounce up with some energy loss
-                }
+                // Strip stays lowered by 40% more
+                mobiusStrip.position.set(0, -4.5, 0);
             }
 
             renderer.render(scene, camera);
         }
 
+        function updateActiveAsciiLines() {
+            if (isModalOpen) return;
+            asciiLines.forEach((line, index) => {
+                if (line && cityPoints[index]) {
+                    // Update the line if it exists and is visible
+                    createConnectionLine(cityPoints[index]);
+                }
+            });
+        }
+
+        function clearAllCityUI() {
+            cityPoints.forEach((_, index) => {
+                removeConnectionLine(index);
+                hideCityLabel(index);
+            });
+        }
+
         // Initialize when page loads
         window.addEventListener('load', init);
+
+        // Update PT/IST clocks with seconds
+        function updateClocks() {
+            const now = new Date();
+            const pt = now.toLocaleTimeString('en-US', {
+                timeZone: 'America/Los_Angeles',
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            const ist = now.toLocaleTimeString('en-US', {
+                timeZone: 'Asia/Kolkata',
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+
+            const ptEl = document.querySelector('.time');
+            const istEl = document.querySelector('.time-ist');
+            if (ptEl) ptEl.textContent = `${pt} PT`;
+            if (istEl) istEl.textContent = `${ist} IST`;
+
+            const dateEl = document.querySelector('.date');
+            if (dateEl) {
+                dateEl.textContent = now.toLocaleDateString('en-US');
+            }
+        }
+
+        // Start the clocks once DOM is ready
+        document.addEventListener('DOMContentLoaded', function () {
+            updateClocks();
+            setInterval(updateClocks, 1000);
+        });
 
         // Add click listener for INFO button
         document.addEventListener('DOMContentLoaded', function () {
@@ -495,11 +833,14 @@
             console.log('Modal element:', modal);
             modal.classList.add('active');
             console.log('Modal classes:', modal.classList);
+            isModalOpen = true;
+            clearAllCityUI();
         }
 
         function closeInfoModal() {
             console.log('Closing modal...');
             document.getElementById('infoModal').classList.remove('active');
+            isModalOpen = false;
         }
 
         // Close modal when clicking outside content
