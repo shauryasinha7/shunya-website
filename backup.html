@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shunya - 3D Doughnut</title>
+    <link rel="stylesheet" href="shunya-styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@300;400;500&display=swap"
+        rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="date-location">
+                <span class="date">4/29/2025</span>
+                <span class="location">NEW YORK CITY</span>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="logo-container">
+                <canvas id="threejs-canvas"></canvas>
+                <div class="fallback-logo" style="display: none;">
+                    <h1 class="company-name">
+                        <span class="company-text">Shunya</span>
+                    </h1>
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <nav class="nav">
+                <a href="#" class="info-link">INFO</a>
+            </nav>
+            <div class="contact">
+                <a href="mailto:info@shunya.com" class="email">info@shunya.com</a>
+            </div>
+        </footer>
+    </div>
+
+    <script src="shunya-script.js"></script>
+</body>
+
+</html>
